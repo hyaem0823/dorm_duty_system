@@ -1,0 +1,9 @@
+{
+  "schedules": [
+    {
+      "name": "duty-remind",
+      "cron": "*/5 * * * *",
+      "path": "/cron/remind"
+    }
+  ]
+}

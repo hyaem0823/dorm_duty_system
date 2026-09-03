@@ -1,0 +1,539 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="format-detection" content="telephone=no">
+<title>宿舍值日表</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif;
+    background: #f2f5f9; color: #22293a; min-height: 100vh; padding-bottom: 40px;
+  }
+  .hero {
+    background: linear-gradient(135deg, #2f7cf6 0%, #38b8a2 100%);
+    color: #fff; padding: 26px 18px 54px; border-radius: 0 0 26px 26px;
+  }
+  .hero h1 { font-size: 20px; font-weight: 600; opacity: .92; }
+  .hero .date { font-size: 14px; opacity: .8; margin-top: 4px; }
+  .hero .who { margin-top: 14px; display: flex; flex-wrap: wrap; gap: 8px; }
+  .chip-big {
+    background: rgba(255,255,255,.22); border: 1px solid rgba(255,255,255,.35);
+    border-radius: 999px; padding: 8px 18px; font-size: 17px; font-weight: 600;
+  }
+  .chip-none { font-size: 15px; opacity: .85; margin-top: 10px; }
+  .wrap { max-width: 520px; margin: -34px auto 0; padding: 0 14px; }
+  .tabs { display: flex; background: #fff; border-radius: 14px; box-shadow: 0 4px 16px rgba(30,50,90,.08); overflow: hidden; }
+  .tabs button {
+    flex: 1; border: 0; background: none; padding: 12px 0; font-size: 15px; color: #7a8499; cursor: pointer;
+  }
+  .tabs button.on { color: #2f7cf6; font-weight: 700; box-shadow: inset 0 -2px 0 #2f7cf6; }
+  .page { display: none; margin-top: 14px; }
+  .page.show { display: block; }
+  .card {
+    background: #fff; border-radius: 14px; box-shadow: 0 2px 10px rgba(30,50,90,.06);
+    padding: 16px; margin-bottom: 12px;
+  }
+  .card h3 { font-size: 15px; margin-bottom: 10px; color: #2c3550; }
+  .muted { color: #8a93a8; font-size: 13px; }
+  .row { display: flex; align-items: center; gap: 8px; padding: 9px 0; border-bottom: 1px dashed #eef1f6; }
+  .row:last-child { border-bottom: 0; }
+  .row .day { width: 44px; font-weight: 700; color: #46506a; flex-shrink: 0; }
+  .row .names { flex: 1; display: flex; flex-wrap: wrap; gap: 6px; }
+  .chip { background: #eef4ff; color: #2f6fe0; border-radius: 999px; padding: 3px 11px; font-size: 13px; }
+  .chip.adj { background: #fff4e5; color: #c47b12; }
+  .btn {
+    display: inline-block; border: 0; border-radius: 10px; padding: 10px 16px; font-size: 14px;
+    background: #2f7cf6; color: #fff; cursor: pointer; margin-top: 10px;
+  }
+  .btn.gray { background: #eef1f6; color: #46506a; }
+  .btn.warn { background: #ffefeb; color: #d24b2e; }
+  .btn.full { width: 100%; margin-top: 14px; }
+  input[type=text], input[type=password], input[type=date], input[type=time], select {
+    width: 100%; border: 1px solid #dde3ee; border-radius: 10px; padding: 10px 12px;
+    font-size: 15px; background: #fbfcfe; color: #22293a; outline: none;
+  }
+  input:focus { border-color: #2f7cf6; }
+  .field { margin-bottom: 10px; }
+  .field label { display: block; font-size: 13px; color: #5b657d; margin-bottom: 5px; }
+  .check { display: inline-flex; align-items: center; gap: 6px; background: #f3f6fb; border-radius: 999px; padding: 6px 12px; margin: 0 8px 8px 0; font-size: 14px; cursor: pointer; }
+  .empty { color: #98a1b5; font-size: 13px; padding: 6px 0; }
+  .member-row { display: flex; gap: 8px; align-items: center; margin-bottom: 8px; }
+  .member-row input { flex: 1; }
+  .member-row .nm { flex: 0 0 30%; }
+  .member-row .del { flex: 0 0 auto; border: 0; background: #ffefeb; color: #d24b2e; border-radius: 8px; padding: 8px 12px; font-size: 13px; cursor: pointer; }
+  .mask { position: fixed; inset: 0; background: rgba(15,22,40,.45); display: none; align-items: center; justify-content: center; z-index: 50; padding: 24px; }
+  .mask.show { display: flex; }
+  .modal { background: #fff; border-radius: 16px; width: 100%; max-width: 380px; padding: 18px; max-height: 82vh; overflow: auto; }
+  .modal h3 { font-size: 16px; margin-bottom: 12px; }
+  .modal .actions { display: flex; gap: 10px; margin-top: 14px; }
+  .modal .actions .btn { flex: 1; margin-top: 0; }
+  .toast {
+    position: fixed; left: 50%; bottom: 12%; transform: translateX(-50%);
+    background: rgba(23,32,56,.9); color: #fff; padding: 10px 18px; border-radius: 10px;
+    font-size: 14px; display: none; z-index: 99; max-width: 86%;
+  }
+  .guide { font-size: 13px; color: #5b657d; line-height: 1.8; }
+  .guide b { color: #2c3550; }
+  .adj-mark { font-size: 11px; color: #c47b12; background: #fff4e5; border-radius: 6px; padding: 1px 6px; margin-left: 4px; }
+  .status-line { font-size: 13px; color: #8a93a8; margin-top: 6px; word-break: break-all; }
+</style>
+</head>
+<body>
+
+<div class="hero">
+  <h1>宿舍值日表</h1>
+  <div class="date" id="hero-date"></div>
+  <div class="who" id="hero-who"></div>
+</div>
+
+<div class="wrap">
+  <div class="tabs">
+    <button data-tab="today" class="on">今日</button>
+    <button data-tab="week">排班</button>
+    <button data-tab="adjust">调班</button>
+    <button data-tab="admin">管理</button>
+  </div>
+
+  <!-- 今日 -->
+  <div class="page show" id="page-today">
+    <div class="card">
+      <h3>今日值日</h3>
+      <div id="today-detail"><p class="empty">加载中...</p></div>
+    </div>
+    <div class="card">
+      <h3>未来 7 天</h3>
+      <div id="next7"><p class="empty">加载中...</p></div>
+    </div>
+    <p class="muted" style="text-align:center">在群里收藏本页，排班变动第一时间可见</p>
+  </div>
+
+  <!-- 排班 -->
+  <div class="page" id="page-week">
+    <div class="card">
+      <h3>每周固定排班</h3>
+      <p class="muted" style="margin-bottom:6px">点某一天可修改当天的固定值日人（可多人）</p>
+      <div id="week-list"></div>
+    </div>
+  </div>
+
+  <!-- 调班 -->
+  <div class="page" id="page-adjust">
+    <div class="card">
+      <h3>某天临时调整 / 换班 / 请假</h3>
+      <div class="field"><label>选择日期</label><input type="date" id="ov-date"></div>
+      <div id="ov-current"></div>
+      <div class="field" style="margin-top:10px"><label>改为谁值日（可多选）</label><div id="ov-checks"><p class="empty">加载中...</p></div></div>
+      <button class="btn" id="ov-save">保存调整</button>
+      <button class="btn gray" id="ov-clear">设为无人值日</button>
+      <button class="btn warn" id="ov-del">恢复默认排班</button>
+    </div>
+  </div>
+
+  <!-- 管理 -->
+  <div class="page" id="page-admin">
+    <div class="card">
+      <h3>管理员口令</h3>
+      <div class="field"><input type="password" id="adm-key" placeholder="首次填写的口令将成为管理员口令"></div>
+      <p class="muted">口令会保存在本机，用于修改排班和配置。首次修改任何内容时，你填的口令会自动成为本表的管理员口令。</p>
+    </div>
+
+    <div class="card">
+      <h3>成员管理</h3>
+      <div id="member-list"></div>
+      <div class="member-row" style="margin-top:10px">
+        <input type="text" class="nm" id="mem-name" placeholder="姓名">
+        <input type="text" id="mem-uid" placeholder="WxPusher UID（可选）">
+        <button class="btn" style="margin-top:0" id="mem-add">添加</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <h3>推送设置</h3>
+      <div class="field"><label>WxPusher appToken（AT_ 开头）</label><input type="text" id="st-token" placeholder="AT_xxxxxxxx"></div>
+      <div class="field"><label>提醒方式</label>
+        <select id="st-notify">
+          <option value="off">关闭</option>
+          <option value="topic">主题推送（全员订阅一个主题，推荐）</option>
+          <option value="uids">UID 推送（按成员绑定的 UID 逐个推送）</option>
+        </select>
+      </div>
+      <div class="field"><label>主题 ID（方式选“主题推送”时填写）</label><input type="text" id="st-topic" placeholder="如 12345"></div>
+      <div class="field"><label>每天推送时间</label><input type="time" id="st-time" value="08:00"></div>
+      <button class="btn" id="st-save">保存设置</button>
+      <button class="btn gray" id="st-test">发送测试推送</button>
+      <div class="status-line" id="st-status"></div>
+    </div>
+
+    <div class="card">
+      <h3>接入 WxPusher 指引（免费）</h3>
+      <div class="guide">
+        <b>1.</b> 电脑浏览器打开 wxpusher.zjiecode.com，注册登录<br>
+        <b>2.</b> 管理后台 - 应用管理 - 创建应用，得到 appToken（AT_ 开头）<br>
+        <b>3.</b> 全员接收提醒，二选一：<br>
+        　· <b>主题模式（推荐）</b>：后台创建主题（如“宿舍值日”），把主题关注二维码发给室友订阅，再把主题 ID 填到上方<br>
+        　· <b>UID 模式</b>：每个成员扫码关注应用后，在后台用户列表查到各自 UID，填到成员管理里<br>
+        <b>4.</b> 成员在微信里按 WxPusher 提示订阅后即可收到提醒（也可装 WxPusher App）<br>
+        <b>5.</b> 保存设置后点“发送测试推送”验证
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="mask" id="mask">
+  <div class="modal">
+    <h3 id="modal-title"></h3>
+    <div id="modal-body"></div>
+    <div class="actions">
+      <button class="btn gray" id="modal-cancel">取消</button>
+      <button class="btn" id="modal-save">保存</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+(function () {
+  "use strict";
+  var WEEK_ORDER = ["1", "2", "3", "4", "5", "6", "0"];
+  var WEEK_NAMES = { "1": "周一", "2": "周二", "3": "周三", "4": "周四", "5": "周五", "6": "周六", "0": "周日" };
+  var DATA = null;
+  var adminKey = localStorage.getItem("duty_admin_key") || "";
+
+  // ---------- 基础 ----------
+  function $(s) { return document.querySelector(s); }
+  function $all(s) { return Array.prototype.slice.call(document.querySelectorAll(s)); }
+  function esc(s) {
+    return String(s == null ? "" : s).replace(/[&<>"']/g, function (c) {
+      return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
+    });
+  }
+  function pad2(n) { return (n < 10 ? "0" : "") + n; }
+  function dateStr(d) { return d.getFullYear() + "-" + pad2(d.getMonth() + 1) + "-" + pad2(d.getDate()); }
+  function today() { return dateStr(new Date()); }
+
+  function toast(msg) {
+    var t = $("#toast");
+    t.textContent = msg; t.style.display = "block";
+    clearTimeout(t._tm);
+    t._tm = setTimeout(function () { t.style.display = "none"; }, 2600);
+  }
+
+  function api(path, body) {
+    var opt = body ? { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) } : undefined;
+    return fetch(path, opt).then(function (res) {
+      return res.json().catch(function () { throw new Error("响应解析失败"); });
+    }).then(function (j) {
+      if (j && j.error) { var e = new Error(j.error); e.auth = j.error.indexOf("口令") >= 0; throw e; }
+      return j;
+    });
+  }
+
+  // 需要口令的操作：没口令先弹窗，口令错了重弹
+  function withAdmin(fn) {
+    if (adminKey) return run(fn);
+    askKey(function () { run(fn); });
+    function run(f) {
+      var r = f();
+      if (!r || !r.catch) return;
+      r.catch(function (e) {
+        if (e.auth) {
+          adminKey = ""; localStorage.removeItem("duty_admin_key");
+          toast(e.message);
+          askKey(function () { run(f); });
+        } else { toast(e.message || "操作失败"); }
+      });
+    }
+  }
+
+  function askKey(then) {
+    openModal("输入管理员口令",
+      '<input type="password" id="mk" placeholder="管理员口令（首次填写即设为口令）">',
+      function () {
+        var v = $("#mk").value.trim();
+        if (!v) throw new Error("请输入口令");
+        adminKey = v; localStorage.setItem("duty_admin_key", v);
+        $("#adm-key").value = v;
+      }, then);
+  }
+
+  // ---------- 弹窗 ----------
+  var modalOnSave = null;
+  function openModal(title, html, onSave, afterClose) {
+    $("#modal-title").textContent = title;
+    $("#modal-body").innerHTML = html;
+    modalOnSave = onSave;
+    $("#mask").classList.add("show");
+    $("#mask")._afterClose = afterClose || null;
+  }
+  function closeModal() {
+    $("#mask").classList.remove("show");
+    if ($("#mask")._afterClose) { var f = $("#mask")._afterClose; $("#mask")._afterClose = null; f && f(); }
+  }
+  $("#modal-cancel").onclick = closeModal;
+  $("#modal-save").onclick = function () {
+    if (!modalOnSave) return closeModal();
+    Promise.resolve().then(modalOnSave).then(closeModal)
+      .catch(function (e) { toast(e.message || "保存失败"); });
+  };
+
+  // ---------- 数据 ----------
+  function dutyFor(date, weekday) {
+    if (!DATA) return [];
+    if (DATA.overrides[date] !== undefined) return DATA.overrides[date];
+    return DATA.weekly[weekday] || [];
+  }
+
+  function load() {
+    api("/api/data").then(function (d) {
+      DATA = d;
+      renderAll();
+      renderOvCurrent();
+    }).catch(function (e) {
+      $("#today-detail").innerHTML = '<p class="empty">加载失败：' + esc(e.message) + '</p>';
+    });
+  }
+
+  // ---------- 渲染 ----------
+  function renderAll() {
+    renderHero();
+    renderToday();
+    renderNext7();
+    renderWeek();
+    renderAdmin();
+    renderOvChecks();
+  }
+
+  function renderHero() {
+    var d = new Date();
+    $("#hero-date").textContent = (d.getMonth() + 1) + "月" + d.getDate() + "日 " + WEEK_NAMES[String(d.getDay())];
+    var names = dutyFor(today(), String(d.getDay()));
+    var box = $("#hero-who");
+    box.innerHTML = "";
+    if (names.length) {
+      names.forEach(function (n) {
+        var c = document.createElement("div"); c.className = "chip-big"; c.textContent = n; box.appendChild(c);
+      });
+    } else {
+      var p = document.createElement("div"); p.className = "chip-none"; p.textContent = "今天暂无人值日"; box.appendChild(p);
+    }
+  }
+
+  function renderToday() {
+    var d = new Date();
+    var t = today();
+    var names = dutyFor(t, String(d.getDay()));
+    var isAdj = DATA && DATA.overrides[t] !== undefined;
+    $("#today-detail").innerHTML = names.length
+      ? '<p style="font-size:15px">今日值日：<b>' + names.map(esc).join("、") + "</b>" + (isAdj ? '<span class="adj-mark">已调整</span>' : "") + "</p>"
+      : '<p class="empty">今日无人值日' + (isAdj ? "（已调整为休息）" : "") + "</p>";
+  }
+
+  function renderNext7() {
+    var html = "";
+    for (var i = 0; i < 7; i++) {
+      var d = new Date(); d.setDate(d.getDate() + i);
+      var ds = dateStr(d), wd = String(d.getDay());
+      var names = dutyFor(ds, wd);
+      var isAdj = DATA && DATA.overrides[ds] !== undefined;
+      html += '<div class="row"><div class="day">' + (i === 0 ? "今天" : WEEK_NAMES[wd]) + "</div><div class='names'>" +
+        (names.length ? names.map(function (n) { return '<span class="chip' + (isAdj ? " adj" : "") + '">' + esc(n) + "</span>"; }).join("")
+          : '<span class="empty">无人</span>') +
+        (isAdj ? '<span class="adj-mark">已调整</span>' : "") + "</div></div>";
+    }
+    $("#next7").innerHTML = html;
+  }
+
+  function renderWeek() {
+    if (!DATA) return;
+    $("#week-list").innerHTML = WEEK_ORDER.map(function (w) {
+      var names = DATA.weekly[w] || [];
+      return '<div class="row"><div class="day">' + WEEK_NAMES[w] + '</div><div class="names">' +
+        (names.length ? names.map(function (n) { return '<span class="chip">' + esc(n) + "</span>"; }).join("") : '<span class="empty">暂无</span>') +
+        '</div><button class="btn gray" style="margin-top:0;padding:6px 12px;font-size:13px" data-w="' + w + '">修改</button></div>';
+    }).join("");
+    $all("#week-list button[data-w]").forEach(function (b) {
+      b.onclick = function () { editWeekly(b.getAttribute("data-w")); };
+    });
+  }
+
+  function memberChecks(selected) {
+    if (!DATA.members.length) return '<p class="empty">请先到“管理”页添加成员</p>';
+    return DATA.members.map(function (m) {
+      return '<label class="check"><input type="checkbox" value="' + esc(m.name) + '" ' +
+        (selected.indexOf(m.name) >= 0 ? "checked" : "") + "> " + esc(m.name) + "</label>";
+    }).join("");
+  }
+  function collectChecks(root) {
+    return $all(root + " input:checked").map(function (i) { return i.value; });
+  }
+
+  function editWeekly(w) {
+    withAdmin(function () {
+      openModal("设置" + WEEK_NAMES[w] + "的固定值日人",
+        memberChecks(DATA.weekly[w] || []),
+        function () {
+          var names = collectChecks("#modal-body");
+          return api("/api/schedule", { adminKey: adminKey, type: "weekly", weekday: w, names: names })
+            .then(load);
+        });
+    });
+  }
+
+  // ---------- 调班 ----------
+  function renderOvChecks() {
+    if (!DATA) return;
+    $("#ov-checks").innerHTML = memberChecks([]);
+  }
+
+  function renderOvCurrent() {
+    var ds = $("#ov-date").value;
+    if (!ds || !DATA) return;
+    var d = new Date(ds.replace(/-/g, "/"));
+    var wd = String(d.getDay());
+    var names = dutyFor(ds, wd);
+    var isAdj = DATA.overrides[ds] !== undefined;
+    $("#ov-current").innerHTML = names.length
+      ? '<p>该日当前值日：<b>' + names.map(esc).join("、") + "</b>" + (isAdj ? '<span class="adj-mark">已调整</span>' : "") + "</p>"
+      : '<p class="empty">该日暂无人值日' + (isAdj ? "（已设为无人）" : "") + "</p>";
+    // 勾选框同步为当前值日人
+    $all("#ov-checks input").forEach(function (i) {
+      i.checked = names.indexOf(i.value) >= 0;
+    });
+  }
+
+  $("#ov-date").onchange = renderOvCurrent;
+
+  function needDate() {
+    var ds = $("#ov-date").value;
+    if (!ds) { toast("请先选择日期"); return null; }
+    return ds;
+  }
+  function refreshAdjust() { return api("/api/data").then(function (d) { DATA = d; renderAll(); renderOvCurrent(); }); }
+
+  $("#ov-save").onclick = function () {
+    var ds = needDate(); if (!ds) return;
+    withAdmin(function () {
+      return api("/api/schedule", { adminKey: adminKey, type: "override", date: ds, names: collectChecks("#ov-checks") })
+        .then(refreshAdjust).then(function () { toast("已保存 " + ds + " 的调整"); });
+    });
+  };
+  $("#ov-clear").onclick = function () {
+    var ds = needDate(); if (!ds) return;
+    withAdmin(function () {
+      return api("/api/schedule", { adminKey: adminKey, type: "override", date: ds, names: [] })
+        .then(refreshAdjust).then(function () { toast(ds + " 已设为无人值日"); });
+    });
+  };
+  $("#ov-del").onclick = function () {
+    var ds = needDate(); if (!ds) return;
+    withAdmin(function () {
+      return api("/api/schedule", { adminKey: adminKey, type: "override-del", date: ds })
+        .then(refreshAdjust).then(function () { toast(ds + " 已恢复默认排班"); });
+    });
+  };
+
+  // ---------- 管理 ----------
+  function renderAdmin() {
+    if (!DATA) return;
+    $("#adm-key").value = adminKey;
+
+    var html = DATA.members.map(function (m) {
+      return '<div class="member-row"><input type="text" class="nm" value="' + esc(m.name) + '" readonly>' +
+        '<input type="text" data-name="' + esc(m.name) + '" value="' + esc(m.uid || "") + '" placeholder="WxPusher UID">' +
+        '<button class="del" data-name="' + esc(m.name) + '">删除</button></div>';
+    }).join("") || '<p class="empty">还没有成员，先添加吧</p>';
+    $("#member-list").innerHTML = html;
+
+    $all("#member-list .del").forEach(function (b) {
+      b.onclick = function () {
+        var name = b.getAttribute("data-name");
+        withAdmin(function () {
+          return api("/api/members", { adminKey: adminKey, action: "del", name: name })
+            .then(load).then(function () { toast("已删除 " + name); });
+        });
+      };
+    });
+    $all("#member-list input[data-name]").forEach(function (i) {
+      i.onchange = function () {
+        var name = i.getAttribute("data-name");
+        withAdmin(function () {
+          return api("/api/members", { adminKey: adminKey, action: "setuid", name: name, uid: i.value.trim() })
+            .then(load).then(function () { toast("已保存 " + name + " 的 UID"); });
+        });
+      };
+    });
+
+    var s = DATA.settings;
+    if ($("#st-token").value === "") $("#st-token").placeholder = s.pushConfigured ? "已配置（输入新值可覆盖）" : "AT_xxxxxxxx";
+    $("#st-notify").value = s.notify || "off";
+    $("#st-topic").value = s.topicId || "";
+    if (s.pushTime) $("#st-time").value = s.pushTime;
+    var st = $("#st-status");
+    st.textContent = "";
+    if (s.lastPushDate) st.textContent = "上次推送：" + s.lastPushDate + " " + (s.lastPushResult || "");
+    if (!s.hasAdmin && !adminKey) st.textContent = "首次使用：填写口令并保存设置，即可完成初始化";
+  }
+
+  $("#mem-add").onclick = function () {
+    var name = $("#mem-name").value.trim();
+    var uid = $("#mem-uid").value.trim();
+    if (!name) { toast("请输入姓名"); return; }
+    withAdmin(function () {
+      return api("/api/members", { adminKey: adminKey, action: "add", name: name, uid: uid })
+        .then(load).then(function () {
+          $("#mem-name").value = ""; $("#mem-uid").value = "";
+          toast("已添加 " + name);
+        });
+    });
+  };
+
+  $("#st-save").onclick = function () {
+    var k = $("#adm-key").value.trim();
+    if (k) { adminKey = k; localStorage.setItem("duty_admin_key", k); }
+    withAdmin(function () {
+      return api("/api/settings", {
+        adminKey: adminKey,
+        appToken: $("#st-token").value.trim(),
+        notify: $("#st-notify").value,
+        topicId: $("#st-topic").value.trim(),
+        pushTime: $("#st-time").value || "08:00"
+      }).then(load).then(function () { toast("设置已保存"); });
+    });
+  };
+
+  $("#st-test").onclick = function () {
+    var k = $("#adm-key").value.trim();
+    if (k) { adminKey = k; localStorage.setItem("duty_admin_key", k); }
+    withAdmin(function () {
+      return api("/api/remind", { adminKey: adminKey }).then(function (r) {
+        if (r.pushed) toast("测试推送已发出，请查看微信");
+        else toast("未推送：" + (r.reason || JSON.stringify(r.wxpusher || "")));
+        load();
+      });
+    });
+  };
+
+  $("#adm-key").onchange = function () {
+    adminKey = $("#adm-key").value.trim();
+    if (adminKey) localStorage.setItem("duty_admin_key", adminKey);
+  };
+
+  // ---------- Tab 切换 ----------
+  $all(".tabs button").forEach(function (b) {
+    b.onclick = function () {
+      $all(".tabs button").forEach(function (x) { x.classList.toggle("on", x === b); });
+      $all(".page").forEach(function (p) { p.classList.toggle("show", p.id === "page-" + b.getAttribute("data-tab")); });
+    };
+  });
+
+  // 初始化
+  var d0 = new Date();
+  $("#ov-date").value = dateStr(d0);
+  load();
+})();
+</script>
+</body>
+</html>
