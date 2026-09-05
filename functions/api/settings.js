@@ -17,7 +17,7 @@ export async function onRequestPost({ request, env }) {
     if (body.appToken !== undefined) data.settings.appToken = String(body.appToken).trim();
     if (body.notify !== undefined) {
       const n = String(body.notify);
-      if (["off", "topic", "uids"].includes(n)) data.settings.notify = n;
+      if (["off", "topic", "uids", "uids_all"].includes(n)) data.settings.notify = n;
     }
     if (body.topicId !== undefined) data.settings.topicId = String(body.topicId).trim();
     if (body.pushTime !== undefined) {
