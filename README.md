@@ -96,26 +96,109 @@ EdgeOne Pages 不支持 cron 定时任务，需用外部服务定时访问 `/cro
 
 > 可选防护：在 EdgeOne Pages 项目设置 → 环境变量里加 `CRON_KEY`，则 `/cron/remind` 必须带 `?key=你的key` 才能访问，防止他人恶意触发。
 
-## 配置自定义域名（Cloudflare 为例）
+## 部署到 Cloudflare Pages（推荐）
 
-EdgeOne Pages 默认提供 `*.edgeone.cool` 永久域名，如果你有自己的域名且 DNS 托管在 Cloudflare：
+如果你不想用 EdgeOne，可以迁移到 Cloudflare Pages。两者都支持 Pages Functions + KV，代码完全兼容无需修改。
 
-1. **EdgeOne 控制台绑定域名**：
-   - 进入 EdgeOne Pages 项目 → 「域名设置」→ 「添加域名」
-   - 输入你的域名（如 `duty.example.com`）
-   - EdgeOne 会给你一个 CNAME 目标（形如 `xxx.edgeone.cool`）
-2. **Cloudflare 添加 CNAME 记录**：
-   - 登录 [Cloudflare 控制台](https://dash.cloudflare.com)
-   - 选择你的域名 → DNS → Records → Add record
-   - Type: `CNAME`
-   - Name: `duty`（或你想的子域名前缀）
-   - Target: 上一步 EdgeOne 给的 CNAME 目标
-   - Proxy status: **DNS only**（灰色云朵，EdgeOne 自己处理 SSL/CDN）— 如果开橙色云朵可能 SSL 双跳出问题
-   - 保存
-3. **回到 EdgeOne 控制台**点「验证域名」，等 1-5 分钟生效
-4. DNS 生效后，用 `https://你的域名` 访问即可
+### 1. Fork 仓库
 
-> 如果根域名（apex domain）也要用，Cloudflare 支持 CNAME Flattening，把根域名直接 CNAME 到 EdgeOne 目标即可。
+点击 GitHub 页面右上角 Fork，复制到自己账号下。
+
+### 2. 在 Cloudflare Pages 创建项目
+
+1. 登录 [Cloudflare Pages 控制台](https://dash.cloudflare.com)
+2. **Workers & Pages** → **Create application** → **Pages** → **Connect to Git**
+3. 选择你 Fork 的仓库
+4. 配置：
+   - **Project name**：`dorm-duty`（任意）
+   - **Production branch**：`main`
+   - **Framework preset**：`None`
+   - **Build command**：留空
+   - **Build output directory**：`/`（根目录，即整个仓库根）
+   - **Root directory**：`/`
+5. **Save and Deploy**
+
+部署完成后会得到一个 `*.pages.dev` 域名。
+
+### 3. 绑定 KV 存储（必须）
+
+1. Cloudflare 控制台 → **Workers & Pages** → **KV** → **Create a namespace**
+2. 名字随便填（如 `DUTY`），创建
+3. 回到你刚部署的 Pages 项目 → **Settings** → **Functions** → **KV namespace bindings**
+4. **Add binding**：
+   - **Variable name**：`DUTY_KV` ← 必须是这个，代码写死的
+   - **KV namespace**：选你刚创建的那个
+5. **Production** 和 **Preview** 两个环境都加上
+6. 回到 **Deployments** → 找到最新一次部署 → **Retry deployment**（或 push 一个新 commit 触发重新部署）让绑定生效
+
+### 4. 访问站点并初始化
+
+打开 `https://你的项目名.pages.dev`，按顺序操作：
+
+1. **管理页** → 填管理员口令（首次设置）→ 添加成员
+2. **排班页** → 选模式（固定排班 / 轮班制）→ 配置 → 保存
+3. **调班页** → 如需临时调整，选「插入顺延」或「调班请求」子标签
+
+### 5. 配置微信推送
+
+**重要澄清**：WxPusher 不是"集成"或"连接"应用，它就是一个 HTTP 接口。你的网站代码里直接 POST 到 WxPusher 服务器，所以 Cloudflare 这边**完全不需要做任何 WxPusher 配置**。你只要：
+
+1. 注册 [wxpusher.zjiecode.com](https://wxpusher.zjiecode.com) → 创建应用 → 复制 `appToken`（`AT_` 开头）
+2. 进入你的网站「管理」→「推送设置」：
+   - WxPusher appToken → 粘贴
+   - 提醒方式 → 选 UID 推送（仅值日生）或 UID 推送（全员）
+   - 推送时间 → 设定（如 `08:00`）
+   - 成员管理 → 每个成员填 WxPusher UID
+3. 保存 → 点「发送测试推送」
+
+如果收不到，检查：
+- 微信关注公众号「WxPusher 消息服务」
+- UID 是当前要收消息的微信扫码出来的（不是别人的）
+- 应用通过审核（WxPusher 后台 → 应用管理 → 看状态）
+
+### 6. 配置定时推送（Cloudflare Cron Triggers）
+
+Cloudflare Workers 支持 Cron Triggers，比外部 cron 服务更稳定。但 Pages 项目本身不直接支持 Cron，需用一个 Worker 调用 Pages 函数：
+
+**方案 A：外部 cron 服务（最简单）**
+
+1. 注册 [cron-job.org](https://cron-job.org)（免费）
+2. 创建定时任务：
+   - URL：`https://你的项目名.pages.dev/cron/remind`
+   - 频率：每 5 分钟
+   - 方式：GET
+3. 完成
+
+**方案 B：Cloudflare Worker Cron Triggers（推荐，免费）**
+
+1. Cloudflare 控制台 → **Workers & Pages** → **Create application** → **Create Worker**
+2. 名字填 `duty-cron`
+3. 部署后 → **Settings** → **Triggers** → **Cron Triggers** → 添加：
+   - Cron expression：`*/5 * * * *`
+4. 编辑 Worker 代码（复制下面这段）：
+
+```javascript
+export default {
+  async scheduled(event, env, ctx) {
+    const url = `https://你的项目名.pages.dev/cron/remind`;
+    await fetch(url);
+  }
+};
+```
+
+5. 保存 → 部署
+
+每天到点（北京时间，按你在网站「推送设置」里的时间）会自动推送。
+
+### 7. 绑定自定义域名
+
+Cloudflare Pages 自带 `*.pages.dev` 永久域名，如果想用自己的域名：
+
+1. 进入 Pages 项目 → **Custom domains** → **Set up a custom domain**
+2. 输入你的域名（如 `duty.你的域名.com`）
+3. 如果域名 DNS 在 Cloudflare：自动加 CNAME 记录，无需手动操作
+4. 如果域名 DNS 在别处：手动添加 CNAME 记录指向 `你的项目名.pages.dev`
+5. 等 1-5 分钟生效，HTTPS 自动配好
 
 ## 技术栈
 
