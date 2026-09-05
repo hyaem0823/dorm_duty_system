@@ -82,6 +82,11 @@
   .guide b { color: #2c3550; }
   .adj-mark { font-size: 11px; color: #c47b12; background: #fff4e5; border-radius: 6px; padding: 1px 6px; margin-left: 4px; }
   .status-line { font-size: 13px; color: #8a93a8; margin-top: 6px; word-break: break-all; }
+  .log-row { padding: 8px 0; border-top: 1px solid #eef0f4; font-size: 13px; }
+  .log-row:first-child { border-top: 0; }
+  .log-head { margin-bottom: 3px; }
+  .log-head .muted { font-size: 11px; }
+  .arrow { color: #4a7dff; font-weight: bold; margin: 0 6px; }
 </style>
 </head>
 <body>
@@ -154,9 +159,27 @@
       <div class="field"><label>选择日期</label><input type="date" id="ov-date"></div>
       <div id="ov-current"></div>
       <div class="field" style="margin-top:10px"><label>改为谁值日（可多选）</label><div id="ov-checks"><p class="empty">加载中...</p></div></div>
+      <div class="field"><label>备注（可选，会写入换班记录）</label><input type="text" id="ov-note" placeholder="如：李四替张三"></div>
       <button class="btn" id="ov-save">保存调整</button>
       <button class="btn gray" id="ov-clear">设为无人值日</button>
       <button class="btn warn" id="ov-del">恢复默认排班</button>
+    </div>
+
+    <div class="card">
+      <h3>两人互调（A 和 B 互换值日）</h3>
+      <p class="muted">把 A 在 date1 的值日与 B 在 date2 的值日对调，其他成员不受影响。</p>
+      <div class="field"><label>成员 A</label><select id="sw-a"><option value="">请选择</option></select></div>
+      <div class="field"><label>成员 B</label><select id="sw-b"><option value="">请选择</option></select></div>
+      <div class="field"><label>日期 1（A 原本值日）</label><input type="date" id="sw-d1"></div>
+      <div class="field"><label>日期 2（B 原本值日）</label><input type="date" id="sw-d2"></div>
+      <div class="field"><label>备注（可选）</label><input type="text" id="sw-note" placeholder="如：互相替班"></div>
+      <button class="btn" id="sw-go">执行互调</button>
+    </div>
+
+    <div class="card">
+      <h3>换班记录（最近 7 天）</h3>
+      <div id="swap-log"></div>
+      <button class="btn gray" id="log-clear" style="margin-top:10px">清空记录</button>
     </div>
   </div>
 
@@ -522,6 +545,12 @@
   function renderOvChecks() {
     if (!DATA) return;
     $("#ov-checks").innerHTML = memberChecks([]);
+    // 同时填充互调两下拉
+    var opts = '<option value="">请选择</option>' +
+      DATA.members.map(function (m) { return '<option value="' + esc(m.name) + '">' + esc(m.name) + '</option>'; }).join("");
+    $("#sw-a").innerHTML = opts;
+    $("#sw-b").innerHTML = opts;
+    renderSwapLog();
   }
 
   function renderOvCurrent() {
@@ -540,6 +569,29 @@
     });
   }
 
+  function renderSwapLog() {
+    var box = $("#swap-log");
+    if (!box || !DATA) return;
+    var log = Array.isArray(DATA.swapLog) ? DATA.swapLog.slice().reverse() : [];
+    if (!log.length) { box.innerHTML = '<p class="empty">还没有换班记录</p>'; return; }
+    var ACTION_LABEL = { override: "调整", del: "恢复", swap: "互调" };
+    box.innerHTML = log.map(function (x) {
+      var d = new Date(x.ts || Date.now());
+      var t = d.getFullYear() + "-" + pad2(d.getMonth() + 1) + "-" + pad2(d.getDate()) + " " + pad2(d.getHours()) + ":" + pad2(d.getMinutes());
+      var bef = (x.before || []).join("、") || "（无人）";
+      var aft = (x.after || []).join("、") || "（无人）";
+      var act = ACTION_LABEL[x.action] || x.action;
+      var note = x.note ? '<div class="muted">备注：' + esc(x.note) + '</div>' : "";
+      return '<div class="log-row">' +
+        '<div class="log-head"><b>' + esc(x.date) + '</b> · ' + act + ' · <span class="muted">' + t + '</span></div>' +
+        '<div>' + esc(bef) + ' <span class="arrow">→</span> ' + esc(aft) + '</div>' +
+        note +
+        '</div>';
+    }).join("");
+  }
+
+  function pad2(n) { return String(n).padStart(2, "0"); }
+
   $("#ov-date").onchange = renderOvCurrent;
 
   function needDate() {
@@ -547,27 +599,49 @@
     if (!ds) { toast("请先选择日期"); return null; }
     return ds;
   }
-  function refreshAdjust() { return api("/api/data").then(function (d) { DATA = d; renderAll(); renderOvCurrent(); }); }
+  function refreshAdjust() { return api("/api/data").then(function (d) { DATA = d; renderAll(); renderOvCurrent(); renderSwapLog(); }); }
 
   $("#ov-save").onclick = function () {
     var ds = needDate(); if (!ds) return;
     withAdmin(function () {
-      return api("/api/schedule", { adminKey: adminKey, type: "override", date: ds, names: collectChecks("#ov-checks") })
-        .then(refreshAdjust).then(function () { toast("已保存 " + ds + " 的调整"); });
+      return api("/api/schedule", { adminKey: adminKey, type: "override", date: ds, names: collectChecks("#ov-checks"), note: $("#ov-note").value.trim() })
+        .then(refreshAdjust).then(function () { $("#ov-note").value = ""; toast("已保存 " + ds + " 的调整"); });
     });
   };
   $("#ov-clear").onclick = function () {
     var ds = needDate(); if (!ds) return;
     withAdmin(function () {
-      return api("/api/schedule", { adminKey: adminKey, type: "override", date: ds, names: [] })
+      return api("/api/schedule", { adminKey: adminKey, type: "override", date: ds, names: [], note: $("#ov-note").value.trim() })
         .then(refreshAdjust).then(function () { toast(ds + " 已设为无人值日"); });
     });
   };
   $("#ov-del").onclick = function () {
     var ds = needDate(); if (!ds) return;
     withAdmin(function () {
-      return api("/api/schedule", { adminKey: adminKey, type: "override-del", date: ds })
+      return api("/api/schedule", { adminKey: adminKey, type: "override-del", date: ds, note: $("#ov-note").value.trim() })
         .then(refreshAdjust).then(function () { toast(ds + " 已恢复默认排班"); });
+    });
+  };
+
+  // 两人互调
+  $("#sw-go").onclick = function () {
+    var a = $("#sw-a").value, b = $("#sw-b").value;
+    var d1 = $("#sw-d1").value, d2 = $("#sw-d2").value;
+    if (!a || !b) { toast("请选择两个成员"); return; }
+    if (a === b) { toast("两个成员不能相同"); return; }
+    if (!d1 || !d2) { toast("请选择两个日期"); return; }
+    if (d1 === d2) { toast("两个日期不能相同"); return; }
+    withAdmin(function () {
+      return api("/api/schedule", { adminKey: adminKey, type: "swap", a: a, b: b, date1: d1, date2: d2, note: $("#sw-note").value.trim() })
+        .then(refreshAdjust).then(function () { $("#sw-note").value = ""; toast(a + " ↔ " + b + " 互调已执行"); });
+    });
+  };
+
+  // 清空换班记录
+  $("#log-clear").onclick = function () {
+    withAdmin(function () {
+      return api("/api/schedule", { adminKey: adminKey, type: "log-clear" })
+        .then(refreshAdjust).then(function () { toast("换班记录已清空"); });
     });
   };
 

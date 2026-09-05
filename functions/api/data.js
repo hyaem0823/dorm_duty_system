@@ -10,6 +10,7 @@ export async function onRequest({ env }) {
       overrides: data.overrides,
       mode: data.mode,
       rotation: data.rotation,
+      swapLog: data.swapLog,
       settings: {
         notify: data.settings.notify,
         pushTime: data.settings.pushTime,
@@ -45,6 +46,7 @@ const DEFAULTS = {
   overrides: {},
   mode: "weekly",
   rotation: { startDate: "", order: [] },
+  swapLog: [],
   settings: {
     appToken: "",
     notify: "off",
@@ -69,6 +71,7 @@ async function loadData(kv) {
       startDate: (d.rotation && d.rotation.startDate) ? String(d.rotation.startDate) : "",
       order: (d.rotation && Array.isArray(d.rotation.order)) ? d.rotation.order.map(String) : []
     },
+    swapLog: Array.isArray(d.swapLog) ? d.swapLog.filter((x) => x && typeof x === "object") : [],
     settings: { ...DEFAULTS.settings, ...(d.settings || {}) }
   };
 }
