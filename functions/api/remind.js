@@ -69,6 +69,11 @@ async function pushRemind(data, dutyNames, bj) {
     const tid = Number(s.topicId);
     if (!tid) return { ok: false, msg: "未配置主题 ID" };
     payload.topicIds = [tid];
+  } else if (s.notify === "uids_all") {
+    // UID 推送给所有填了 UID 的成员（不限于当天值日生）
+    const uids = (data.members || []).filter((x) => x.uid).map((x) => x.uid);
+    if (!uids.length) return { ok: false, msg: "没有成员绑定 UID" };
+    payload.uids = uids;
   } else {
     const uids = (data.members || []).filter((x) => dutyNames.includes(x.name) && x.uid).map((x) => x.uid);
     if (!uids.length) return { ok: false, msg: "值日生尚未绑定 UID" };
