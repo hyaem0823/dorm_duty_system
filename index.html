@@ -63,6 +63,10 @@
   .member-row input { flex: 1; }
   .member-row .nm { flex: 0 0 30%; }
   .member-row .del { flex: 0 0 auto; border: 0; background: #ffefeb; color: #d24b2e; border-radius: 8px; padding: 8px 12px; font-size: 13px; cursor: pointer; }
+  .rot-row { display: flex; gap: 6px; align-items: center; margin-bottom: 6px; }
+  .rot-row .nm { flex: 1; }
+  .rot-row .ud { flex: 0 0 auto; border: 0; background: #eef1f6; color: #46506a; border-radius: 8px; padding: 8px 10px; font-size: 13px; cursor: pointer; min-width: 38px; }
+  .rot-row .ud:disabled { opacity: .35; cursor: default; }
   .mask { position: fixed; inset: 0; background: rgba(15,22,40,.45); display: none; align-items: center; justify-content: center; z-index: 50; padding: 24px; }
   .mask.show { display: flex; }
   .modal { background: #fff; border-radius: 16px; width: 100%; max-width: 380px; padding: 18px; max-height: 82vh; overflow: auto; }
@@ -112,9 +116,34 @@
   <!-- 排班 -->
   <div class="page" id="page-week">
     <div class="card">
+      <h3>排班模式</h3>
+      <div class="field">
+        <label>当前模式</label>
+        <select id="mode-select">
+          <option value="weekly">每周固定排班</option>
+          <option value="rotation">轮班制（每天一人，循环）</option>
+        </select>
+      </div>
+      <button class="btn" id="mode-save">切换模式</button>
+      <p class="muted" id="mode-hint" style="margin-top:6px"></p>
+    </div>
+
+    <div class="card" id="card-weekly">
       <h3>每周固定排班</h3>
       <p class="muted" style="margin-bottom:6px">点某一天可修改当天的固定值日人（可多人）</p>
       <div id="week-list"></div>
+    </div>
+
+    <div class="card" id="card-rotation" style="display:none">
+      <h3>轮班设置</h3>
+      <div class="field"><label>起始日期（第一天 = 顺序首位）</label><input type="date" id="rot-start"></div>
+      <div class="field">
+        <label>轮班顺序（点上下箭头调整顺序）</label>
+        <div id="rot-order"><p class="empty">请先到"管理"页添加成员</p></div>
+      </div>
+      <button class="btn" id="rot-save">保存轮班设置</button>
+      <h3 style="margin-top:14px">未来 14 天预览</h3>
+      <div id="rot-preview"><p class="empty">未配置</p></div>
     </div>
   </div>
 
@@ -201,6 +230,7 @@
   var WEEK_NAMES = { "1": "周一", "2": "周二", "3": "周三", "4": "周四", "5": "周五", "6": "周六", "0": "周日" };
   var DATA = null;
   var adminKey = localStorage.getItem("duty_admin_key") || "";
+  var rotOrderDraft = [];
 
   // ---------- 基础 ----------
   function $(s) { return document.querySelector(s); }
@@ -283,7 +313,18 @@
   function dutyFor(date, weekday) {
     if (!DATA) return [];
     if (DATA.overrides[date] !== undefined) return DATA.overrides[date];
+    if (DATA.mode === "rotation") return dutyForRotation(date);
     return DATA.weekly[weekday] || [];
+  }
+  function dutyForRotation(date) {
+    var r = DATA.rotation;
+    if (!r || !r.startDate || !r.order || !r.order.length) return [];
+    var sp = r.startDate.split("-"), cp = date.split("-");
+    var startMs = Date.UTC(+sp[0], +sp[1] - 1, +sp[2]);
+    var curMs = Date.UTC(+cp[0], +cp[1] - 1, +cp[2]);
+    var days = Math.floor((curMs - startMs) / 86400000);
+    if (days < 0) return [];
+    return [r.order[days % r.order.length]];
   }
 
   function load() {
@@ -302,6 +343,7 @@
     renderToday();
     renderNext7();
     renderWeek();
+    renderMode();
     renderAdmin();
     renderOvChecks();
   }
@@ -381,6 +423,99 @@
         });
     });
   }
+
+  // ---------- 轮班 ----------
+  function renderMode() {
+    if (!DATA) return;
+    $("#mode-select").value = DATA.mode || "weekly";
+    $("#card-weekly").style.display = DATA.mode === "rotation" ? "none" : "block";
+    $("#card-rotation").style.display = DATA.mode === "rotation" ? "block" : "none";
+    $("#mode-hint").textContent = DATA.mode === "rotation"
+      ? "轮班模式：从起始日起，按顺序每天一人，循环往复。"
+      : "每周固定模式：按周一~周日分别配置。";
+    if (DATA.mode === "rotation") {
+      rotOrderDraft = (DATA.rotation && DATA.rotation.order && DATA.rotation.order.length)
+        ? DATA.rotation.order.slice()
+        : DATA.members.map(function (m) { return m.name; });
+      $("#rot-start").value = (DATA.rotation && DATA.rotation.startDate) || today();
+      renderRotOrder();
+      renderRotPreview();
+    }
+  }
+
+  function renderRotOrder() {
+    if (!rotOrderDraft.length) {
+      $("#rot-order").innerHTML = '<p class="empty">请先到"管理"页添加成员</p>';
+      return;
+    }
+    $("#rot-order").innerHTML = rotOrderDraft.map(function (n, i) {
+      return '<div class="rot-row"><input type="text" class="nm" value="' + esc(n) + '" readonly>' +
+        '<button class="ud" data-i="' + i + '" data-d="-1" ' + (i === 0 ? "disabled" : "") + '>↑</button>' +
+        '<button class="ud" data-i="' + i + '" data-d="1" ' + (i === rotOrderDraft.length - 1 ? "disabled" : "") + '>↓</button>' +
+        '</div>';
+    }).join("");
+    $all("#rot-order .ud").forEach(function (b) {
+      b.onclick = function () {
+        var i = +b.getAttribute("data-i"), d = +b.getAttribute("data-d");
+        var j = i + d;
+        if (j < 0 || j >= rotOrderDraft.length) return;
+        var tmp = rotOrderDraft[i]; rotOrderDraft[i] = rotOrderDraft[j]; rotOrderDraft[j] = tmp;
+        renderRotOrder();
+        renderRotPreview();
+      };
+    });
+  }
+
+  function previewDutyFor(date, weekday) {
+    if (!DATA) return [];
+    if (DATA.overrides[date] !== undefined) return DATA.overrides[date];
+    var start = $("#rot-start").value;
+    var order = rotOrderDraft;
+    if (!start || !order.length) return [];
+    var sp = start.split("-"), cp = date.split("-");
+    var startMs = Date.UTC(+sp[0], +sp[1] - 1, +sp[2]);
+    var curMs = Date.UTC(+cp[0], +cp[1] - 1, +cp[2]);
+    var days = Math.floor((curMs - startMs) / 86400000);
+    if (days < 0) return [];
+    return [order[days % order.length]];
+  }
+
+  function renderRotPreview() {
+    var html = "";
+    for (var i = 0; i < 14; i++) {
+      var d = new Date(); d.setDate(d.getDate() + i);
+      var ds = dateStr(d), wd = String(d.getDay());
+      var names = previewDutyFor(ds, wd);
+      var isAdj = DATA && DATA.overrides[ds] !== undefined;
+      html += '<div class="row"><div class="day">' + (i === 0 ? "今天" : WEEK_NAMES[wd]) + "</div><div class='names'>" +
+        (names.length ? names.map(function (n) { return '<span class="chip' + (isAdj ? " adj" : "") + '">' + esc(n) + "</span>"; }).join("")
+          : '<span class="empty">无人</span>') +
+        (isAdj ? '<span class="adj-mark">已调整</span>' : "") + "</div></div>";
+    }
+    $("#rot-preview").innerHTML = html;
+  }
+
+  $("#mode-save").onclick = function () {
+    var m = $("#mode-select").value;
+    withAdmin(function () {
+      return api("/api/schedule", { adminKey: adminKey, type: "mode", mode: m })
+        .then(load)
+        .then(function () { toast(m === "rotation" ? "已切换为轮班模式" : "已切换为每周固定模式"); });
+    });
+  };
+
+  $("#rot-start").onchange = renderRotPreview;
+
+  $("#rot-save").onclick = function () {
+    var startDate = $("#rot-start").value;
+    if (!startDate) { toast("请选择起始日期"); return; }
+    if (!rotOrderDraft.length) { toast("请先添加成员"); return; }
+    withAdmin(function () {
+      return api("/api/schedule", { adminKey: adminKey, type: "rotation", startDate: startDate, order: rotOrderDraft })
+        .then(load)
+        .then(function () { toast("轮班设置已保存"); });
+    });
+  };
 
   // ---------- 调班 ----------
   function renderOvChecks() {

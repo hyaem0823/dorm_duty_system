@@ -11,7 +11,7 @@ export async function onRequestPost({ request, env }) {
 
     const bj = bjNow();
     const today = bjDate(bj);
-    const duty = data.overrides[today] !== undefined ? data.overrides[today] : (data.weekly[bj.getUTCDay()] || []);
+    const duty = computeDuty(data, today, bj.getUTCDay());
     if (!duty.length) return json({ pushed: false, reason: "今日无人值日，未推送" });
 
     const r = await pushRemind(data, duty, bj);
@@ -32,6 +32,22 @@ function bjNow() {
 }
 function pad2(n) { return String(n).padStart(2, "0"); }
 function bjDate(bj) { return bj.getUTCFullYear() + "-" + pad2(bj.getUTCMonth() + 1) + "-" + pad2(bj.getUTCDate()); }
+
+function computeDuty(data, dateStr, weekday) {
+  if (data.overrides[dateStr] !== undefined) return data.overrides[dateStr];
+  if (data.mode === "rotation") {
+    const r = data.rotation;
+    if (!r || !r.startDate || !Array.isArray(r.order) || !r.order.length) return [];
+    const sp = String(r.startDate).split("-");
+    const cp = String(dateStr).split("-");
+    const startMs = Date.UTC(+sp[0], +sp[1] - 1, +sp[2]);
+    const curMs = Date.UTC(+cp[0], +cp[1] - 1, +cp[2]);
+    const days = Math.floor((curMs - startMs) / 86400000);
+    if (days < 0) return [];
+    return [r.order[days % r.order.length]];
+  }
+  return data.weekly[weekday] || [];
+}
 
 async function pushRemind(data, dutyNames, bj) {
   const s = data.settings;
@@ -93,6 +109,8 @@ const DEFAULTS = {
   members: [],
   weekly: { 1: [], 2: [], 3: [], 4: [], 5: [], 6: [], 0: [] },
   overrides: {},
+  mode: "weekly",
+  rotation: { startDate: "", order: [] },
   settings: {
     appToken: "",
     notify: "off",
@@ -112,6 +130,11 @@ async function loadData(kv) {
     members: Array.isArray(d.members) ? d.members : [],
     weekly: { ...DEFAULTS.weekly, ...(d.weekly || {}) },
     overrides: d.overrides && typeof d.overrides === "object" ? d.overrides : {},
+    mode: d.mode === "rotation" ? "rotation" : "weekly",
+    rotation: {
+      startDate: (d.rotation && d.rotation.startDate) ? String(d.rotation.startDate) : "",
+      order: (d.rotation && Array.isArray(d.rotation.order)) ? d.rotation.order.map(String) : []
+    },
     settings: { ...DEFAULTS.settings, ...(d.settings || {}) }
   };
 }

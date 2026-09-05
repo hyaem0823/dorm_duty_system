@@ -8,6 +8,8 @@ export async function onRequest({ env }) {
       members: data.members.map((m) => ({ name: m.name, uid: m.uid || "" })),
       weekly: data.weekly,
       overrides: data.overrides,
+      mode: data.mode,
+      rotation: data.rotation,
       settings: {
         notify: data.settings.notify,
         pushTime: data.settings.pushTime,
@@ -41,6 +43,8 @@ const DEFAULTS = {
   members: [],
   weekly: { 1: [], 2: [], 3: [], 4: [], 5: [], 6: [], 0: [] },
   overrides: {},
+  mode: "weekly",
+  rotation: { startDate: "", order: [] },
   settings: {
     appToken: "",
     notify: "off",
@@ -60,6 +64,11 @@ async function loadData(kv) {
     members: Array.isArray(d.members) ? d.members : [],
     weekly: { ...DEFAULTS.weekly, ...(d.weekly || {}) },
     overrides: d.overrides && typeof d.overrides === "object" ? d.overrides : {},
+    mode: d.mode === "rotation" ? "rotation" : "weekly",
+    rotation: {
+      startDate: (d.rotation && d.rotation.startDate) ? String(d.rotation.startDate) : "",
+      order: (d.rotation && Array.isArray(d.rotation.order)) ? d.rotation.order.map(String) : []
+    },
     settings: { ...DEFAULTS.settings, ...(d.settings || {}) }
   };
 }

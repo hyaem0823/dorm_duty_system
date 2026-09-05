@@ -27,6 +27,17 @@ export async function onRequestPost({ request, env }) {
       const date = String(body.date || "");
       if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return json({ error: "日期格式无效" }, 400);
       delete data.overrides[date];
+    } else if (body.type === "mode") {
+      const m = String(body.mode);
+      if (m !== "weekly" && m !== "rotation") return json({ error: "mode 无效" }, 400);
+      data.mode = m;
+    } else if (body.type === "rotation") {
+      const startDate = String(body.startDate || "");
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(startDate)) return json({ error: "startDate 格式无效" }, 400);
+      const order = Array.isArray(body.order)
+        ? body.order.map((n) => String(n).trim()).filter(Boolean)
+        : [];
+      data.rotation = { startDate, order };
     } else {
       return json({ error: "未知操作" }, 400);
     }
@@ -66,6 +77,8 @@ const DEFAULTS = {
   members: [],
   weekly: { 1: [], 2: [], 3: [], 4: [], 5: [], 6: [], 0: [] },
   overrides: {},
+  mode: "weekly",
+  rotation: { startDate: "", order: [] },
   settings: {
     appToken: "",
     notify: "off",
@@ -85,6 +98,11 @@ async function loadData(kv) {
     members: Array.isArray(d.members) ? d.members : [],
     weekly: { ...DEFAULTS.weekly, ...(d.weekly || {}) },
     overrides: d.overrides && typeof d.overrides === "object" ? d.overrides : {},
+    mode: d.mode === "rotation" ? "rotation" : "weekly",
+    rotation: {
+      startDate: (d.rotation && d.rotation.startDate) ? String(d.rotation.startDate) : "",
+      order: (d.rotation && Array.isArray(d.rotation.order)) ? d.rotation.order.map(String) : []
+    },
     settings: { ...DEFAULTS.settings, ...(d.settings || {}) }
   };
 }

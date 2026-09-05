@@ -25,6 +25,9 @@ export async function onRequestPost({ request, env }) {
       for (const k of Object.keys(data.overrides)) {
         data.overrides[k] = data.overrides[k].filter((n) => n !== name);
       }
+      if (data.rotation && Array.isArray(data.rotation.order)) {
+        data.rotation.order = data.rotation.order.filter((n) => n !== name);
+      }
     } else if (body.action === "setuid") {
       const m = data.members.find((x) => x.name === name);
       if (!m) return json({ error: "成员不存在" }, 400);
@@ -69,6 +72,8 @@ const DEFAULTS = {
   members: [],
   weekly: { 1: [], 2: [], 3: [], 4: [], 5: [], 6: [], 0: [] },
   overrides: {},
+  mode: "weekly",
+  rotation: { startDate: "", order: [] },
   settings: {
     appToken: "",
     notify: "off",
@@ -88,6 +93,11 @@ async function loadData(kv) {
     members: Array.isArray(d.members) ? d.members : [],
     weekly: { ...DEFAULTS.weekly, ...(d.weekly || {}) },
     overrides: d.overrides && typeof d.overrides === "object" ? d.overrides : {},
+    mode: d.mode === "rotation" ? "rotation" : "weekly",
+    rotation: {
+      startDate: (d.rotation && d.rotation.startDate) ? String(d.rotation.startDate) : "",
+      order: (d.rotation && Array.isArray(d.rotation.order)) ? d.rotation.order.map(String) : []
+    },
     settings: { ...DEFAULTS.settings, ...(d.settings || {}) }
   };
 }
