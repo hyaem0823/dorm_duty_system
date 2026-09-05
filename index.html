@@ -161,13 +161,14 @@
   <!-- 调班 -->
   <div class="page" id="page-adjust">
     <div class="sub-tabs">
-      <button class="sub-tab active" data-sub="single">单日调整</button>
-      <button class="sub-tab" data-sub="swap">两人互调</button>
-      <button class="sub-tab" data-sub="log">换班记录</button>
+      <button class="sub-tab active" data-sub="single">某天换人</button>
+      <button class="sub-tab" data-sub="swap">两人互换</button>
+      <button class="sub-tab" data-sub="log">调整记录</button>
     </div>
 
     <div class="card sub-panel" id="sub-single">
-      <h3>某天临时调整 / 换班 / 请假</h3>
+      <h3>某天换人</h3>
+      <p class="muted">直接指定某一天的值日生（可临时改人、加人、请假设为无人）。</p>
       <div class="field"><label>选择日期</label><input type="date" id="ov-date"></div>
       <div id="ov-current"></div>
       <div class="field" style="margin-top:10px"><label>改为谁值日（可多选）</label><div id="ov-checks"><p class="empty">加载中...</p></div></div>
@@ -178,8 +179,8 @@
     </div>
 
     <div class="card sub-panel" id="sub-swap" style="display:none">
-      <h3>两人互调（A 和 B 互换值日）</h3>
-      <p class="muted">把 A 在 date1 的值日与 B 在 date2 的值日对调，其他成员不受影响。</p>
+      <h3>两人互换值日</h3>
+      <p class="muted">A 和 B 互相换班：A 原本值日的那天改由 B 值日，B 原本值日的那天改由 A 值日，其他人不受影响。</p>
       <div class="field"><label>成员 A</label><select id="sw-a"><option value="">请选择</option></select></div>
       <div class="field"><label>成员 B</label><select id="sw-b"><option value="">请选择</option></select></div>
       <div class="field"><label>日期 1（A 原本值日）</label><input type="date" id="sw-d1"></div>
@@ -189,7 +190,8 @@
     </div>
 
     <div class="card sub-panel" id="sub-log" style="display:none">
-      <h3>换班记录（最近 7 天）</h3>
+      <h3>调整记录（最近 7 天）</h3>
+      <p class="muted">所有调整和互换操作都会记在这里，7 天后自动清理。</p>
       <div id="swap-log"></div>
       <button class="btn gray" id="log-clear" style="margin-top:10px">清空记录</button>
     </div>
