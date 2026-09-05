@@ -185,7 +185,7 @@
         <select id="st-notify">
           <option value="off">关闭</option>
           <option value="topic">主题推送（全员订阅一个主题，推荐）</option>
-          <option value="uids">UID 推送（按成员绑定的 UID 逐个推送）</option>
+          <option value="uids">UID 推送（仅推送给当天值日生）</option>
         </select>
       </div>
       <div class="field"><label>主题 ID（方式选“主题推送”时填写）</label><input type="text" id="st-topic" placeholder="如 12345"></div>
@@ -202,7 +202,7 @@
         <b>2.</b> 管理后台 - 应用管理 - 创建应用，得到 appToken（AT_ 开头）<br>
         <b>3.</b> 全员接收提醒，二选一：<br>
         　· <b>主题模式（推荐）</b>：后台创建主题（如“宿舍值日”），把主题关注二维码发给室友订阅，再把主题 ID 填到上方<br>
-        　· <b>UID 模式</b>：每个成员扫码关注应用后，在后台用户列表查到各自 UID，填到成员管理里<br>
+        　· <b>UID 模式</b>：每个成员扫码关注应用后，在后台用户列表查到各自 UID，填到成员管理里（仅当天值日生收到推送）<br>
         <b>4.</b> 成员在微信里按 WxPusher 提示订阅后即可收到提醒（也可装 WxPusher App）<br>
         <b>5.</b> 保存设置后点“发送测试推送”验证
       </div>

@@ -85,8 +85,8 @@ async function pushRemind(data, dutyNames, bj) {
     if (!tid) return { ok: false, msg: "未配置主题 ID" };
     payload.topicIds = [tid];
   } else {
-    const uids = (data.members || []).map((x) => x.uid).filter(Boolean);
-    if (!uids.length) return { ok: false, msg: "成员尚未绑定 UID" };
+    const uids = (data.members || []).filter((x) => dutyNames.includes(x.name) && x.uid).map((x) => x.uid);
+    if (!uids.length) return { ok: false, msg: "值日生尚未绑定 UID" };
     payload.uids = uids;
   }
 
