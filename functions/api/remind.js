@@ -163,6 +163,8 @@ const DEFAULTS = {
   overrides: {},
   mode: "weekly",
   rotation: { startDate: "", order: [] },
+  shifts: [],
+  pendingSwaps: [],
   settings: {
     appToken: "",
     notify: "off",
@@ -187,6 +189,8 @@ async function loadData(kv) {
       startDate: (d.rotation && d.rotation.startDate) ? String(d.rotation.startDate) : "",
       order: (d.rotation && Array.isArray(d.rotation.order)) ? d.rotation.order.map(String) : []
     },
+    shifts: Array.isArray(d.shifts) ? d.shifts.filter((x) => x && typeof x === "object") : [],
+    pendingSwaps: Array.isArray(d.pendingSwaps) ? d.pendingSwaps.filter((x) => x && typeof x === "object") : [],
     settings: { ...DEFAULTS.settings, ...(d.settings || {}) }
   };
 }
