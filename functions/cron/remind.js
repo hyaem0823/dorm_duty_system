@@ -49,7 +49,52 @@ function pad2(n) { return String(n).padStart(2, "0"); }
 function bjDate(bj) { return bj.getUTCFullYear() + "-" + pad2(bj.getUTCMonth() + 1) + "-" + pad2(bj.getUTCDate()); }
 
 function computeDuty(data, dateStr, weekday) {
-  if (data.overrides[dateStr] !== undefined) return data.overrides[dateStr];
+  if (data.overrides && data.overrides[dateStr] !== undefined) return data.overrides[dateStr];
+
+  // 取所有 active 且 from <= dateStr 的插入顺延，按 from 升序
+  const shifts = (Array.isArray(data.shifts) ? data.shifts : [])
+    .filter((s) => s && s.active && s.from <= dateStr)
+    .sort((a, b) => (a.from < b.from ? -1 : a.from > b.from ? 1 : 0));
+
+  // 无插入顺延：按 weekly / rotation 原始排班
+  if (!shifts.length) return computeRawDuty(data, dateStr, weekday);
+
+  // 有插入顺延：从最早插入点起迭代到 dateStr
+  const startMs = Date.UTC(+(shifts[0].from.slice(0, 4)), +(shifts[0].from.slice(5, 7)) - 1, +(shifts[0].from.slice(8, 10)));
+  const cp = String(dateStr).split("-");
+  const curMs = Date.UTC(+cp[0], +cp[1] - 1, +cp[2]);
+  const totalDays = Math.floor((curMs - startMs) / 86400000);
+  if (totalDays < 0) return computeRawDuty(data, dateStr, weekday);
+
+  // 模拟顺延：每天 rawDuty 入队尾；有 shift 插入则当天值日 = shift.names；否则取队首
+  const deferred = [];
+  let shiftIdx = 0;
+  for (let i = 0; i <= totalDays; i++) {
+    const ms = startMs + i * 86400000;
+    const d = new Date(ms);
+    const curDate = d.getUTCFullYear() + "-" + String(d.getUTCMonth() + 1).padStart(2, "0") + "-" + String(d.getUTCDate()).padStart(2, "0");
+    const curWd = String(d.getUTCDay());
+    const rawDuty = computeRawDuty(data, curDate, curWd);
+    if (rawDuty && rawDuty.length) deferred.push(...rawDuty);
+
+    const todayShifts = [];
+    while (shiftIdx < shifts.length && shifts[shiftIdx].from === curDate) {
+      todayShifts.push(shifts[shiftIdx]);
+      shiftIdx++;
+    }
+    let actual;
+    if (todayShifts.length) {
+      actual = todayShifts.map((s) => s.name);
+    } else {
+      actual = deferred.length ? [deferred.shift()] : [];
+    }
+    if (i === totalDays) return actual;
+  }
+  return computeRawDuty(data, dateStr, weekday);
+}
+
+// computeRawDuty：按 weekly 或 rotation 原始排班，不考虑 overrides / shifts
+function computeRawDuty(data, dateStr, weekday) {
   if (data.mode === "rotation") {
     const r = data.rotation;
     if (!r || !r.startDate || !Array.isArray(r.order) || !r.order.length) return [];

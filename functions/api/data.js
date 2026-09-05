@@ -11,6 +11,8 @@ export async function onRequest({ env }) {
       mode: data.mode,
       rotation: data.rotation,
       swapLog: data.swapLog,
+      shifts: data.shifts,
+      pendingSwaps: data.pendingSwaps,
       settings: {
         notify: data.settings.notify,
         pushTime: data.settings.pushTime,
@@ -47,6 +49,8 @@ const DEFAULTS = {
   mode: "weekly",
   rotation: { startDate: "", order: [] },
   swapLog: [],
+  shifts: [],
+  pendingSwaps: [],
   settings: {
     appToken: "",
     notify: "off",
@@ -72,6 +76,8 @@ async function loadData(kv) {
       order: (d.rotation && Array.isArray(d.rotation.order)) ? d.rotation.order.map(String) : []
     },
     swapLog: Array.isArray(d.swapLog) ? d.swapLog.filter((x) => x && typeof x === "object") : [],
+    shifts: Array.isArray(d.shifts) ? d.shifts.filter((x) => x && typeof x === "object") : [],
+    pendingSwaps: Array.isArray(d.pendingSwaps) ? d.pendingSwaps.filter((x) => x && typeof x === "object") : [],
     settings: { ...DEFAULTS.settings, ...(d.settings || {}) }
   };
 }

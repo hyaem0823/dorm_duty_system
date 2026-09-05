@@ -1,9 +1,11 @@
 // POST /api/schedule 排班管理
 // { adminKey, type: "weekly", weekday: "1".."6"|"0", names: [] }         设置每周固定排班
-// { adminKey, type: "override", date: "2026-09-05", names: [], note? }  指定日期调整（空数组=无人值日）
-// { adminKey, type: "override-del", date: "2026-09-05" }                删除某日调整，恢复默认
-// { adminKey, type: "swap", a: "张三", b: "李四", date1: "..", date2: "..", note? }  A B 两人互调两天
-// { adminKey, type: "log-clear" }                                       清空换班记录
+// { adminKey, type: "shift-insert", from: "2026-09-08", name: "李四", note? }  插入顺延：从 from 起整体往后顺延一天
+// { adminKey, type: "shift-cancel", id: "sh_xxx" }                       取消某次插入顺延
+// { adminKey, type: "shift-clear" }                                       清空所有插入顺延（即"下次清空"中的清空动作）
+// { adminKey, type: "swap-request", from: "张三", to: "李四", date1, date2, note? }  A 发起调班请求，等 B 确认
+// { adminKey, type: "swap-respond", id: "sw_xxx", action: "confirm"|"reject" }     B 确认/拒绝调班请求
+// { adminKey, type: "log-clear" }                                          清空换班记录
 export async function onRequestPost({ request, env }) {
   try {
     const kv = getKV(env);
@@ -17,41 +19,75 @@ export async function onRequestPost({ request, env }) {
 
     const names = Array.isArray(body.names) ? body.names.map((n) => String(n).trim()).filter(Boolean) : [];
     if (!Array.isArray(data.swapLog)) data.swapLog = [];
+    if (!Array.isArray(data.shifts)) data.shifts = [];
+    if (!Array.isArray(data.pendingSwaps)) data.pendingSwaps = [];
 
     if (body.type === "weekly") {
       const wd = String(body.weekday);
       if (!(wd in { 0: 1, 1: 1, 2: 1, 3: 1, 4: 1, 5: 1, 6: 1 })) return json({ error: "weekday 无效" }, 400);
       data.weekly[wd] = names;
-    } else if (body.type === "override") {
-      const date = String(body.date || "");
-      if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return json({ error: "日期格式无效" }, 400);
-      const before = Array.isArray(data.overrides[date]) ? data.overrides[date].slice() : computeDefaultDuty(data, date);
-      data.overrides[date] = names;
-      pushLog(data, { date, before, after: names.slice(), action: "override", note: String(body.note || "") });
-    } else if (body.type === "override-del") {
-      const date = String(body.date || "");
-      if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return json({ error: "日期格式无效" }, 400);
-      const before = Array.isArray(data.overrides[date]) ? data.overrides[date].slice() : [];
-      delete data.overrides[date];
-      pushLog(data, { date, before, after: computeDefaultDuty(data, date), action: "del", note: String(body.note || "") });
-    } else if (body.type === "swap") {
-      // A B 两人互调两天：date1 原本含 A 的位置改放 B；date2 原本含 B 的位置改放 A
-      const a = String(body.a || "").trim();
-      const b = String(body.b || "").trim();
+    } else if (body.type === "shift-insert") {
+      // 插入顺延：从 from 起整体顺延一天
+      const from = String(body.from || "");
+      const name = String(body.name || "").trim();
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(from)) return json({ error: "from 日期格式无效" }, 400);
+      if (!name) return json({ error: "请选择要插入的人" }, 400);
+      const id = "sh_" + Date.now().toString(36);
+      data.shifts.push({ id, ts: Date.now(), from, name, note: String(body.note || ""), active: true });
+      pushLog(data, { date: from, before: [], after: [name], action: "shift-insert", note: String(body.note || "") });
+    } else if (body.type === "shift-cancel") {
+      const id = String(body.id || "");
+      const idx = data.shifts.findIndex((s) => s.id === id);
+      if (idx < 0) return json({ error: "插入记录不存在" }, 400);
+      const s = data.shifts[idx];
+      data.shifts.splice(idx, 1);
+      pushLog(data, { date: s.from, before: [s.name], after: [], action: "shift-cancel", note: s.note || "" });
+    } else if (body.type === "shift-clear") {
+      const cleared = data.shifts.filter((s) => s.active);
+      data.shifts = [];
+      cleared.forEach((s) => pushLog(data, { date: s.from, before: [s.name], after: [], action: "shift-clear", note: s.note || "" }));
+    } else if (body.type === "swap-request") {
+      // A 发起调班请求，等 B 确认
+      const from = String(body.from || "").trim();
+      const to = String(body.to || "").trim();
       const date1 = String(body.date1 || "");
       const date2 = String(body.date2 || "");
-      if (!a || !b) return json({ error: "请选择两个成员" }, 400);
+      if (!from || !to) return json({ error: "请选择两个成员" }, 400);
+      if (from === to) return json({ error: "两个成员不能相同" }, 400);
       if (!/^\d{4}-\d{2}-\d{2}$/.test(date1) || !/^\d{4}-\d{2}-\d{2}$/.test(date2)) return json({ error: "日期格式无效" }, 400);
       if (date1 === date2) return json({ error: "两个日期不能相同" }, 400);
-      const before1 = Array.isArray(data.overrides[date1]) ? data.overrides[date1].slice() : computeDefaultDuty(data, date1);
-      const before2 = Array.isArray(data.overrides[date2]) ? data.overrides[date2].slice() : computeDefaultDuty(data, date2);
-      const after1 = replaceName(before1, a, b);
-      const after2 = replaceName(before2, b, a);
-      data.overrides[date1] = after1;
-      data.overrides[date2] = after2;
-      const note = String(body.note || "");
-      pushLog(data, { date: date1, before: before1, after: after1, action: "swap", note: note + (note ? " " : "") + a + "→" + b });
-      pushLog(data, { date: date2, before: before2, after: after2, action: "swap", note: note + (note ? " " : "") + b + "→" + a });
+      const id = "sw_" + Date.now().toString(36);
+      data.pendingSwaps.push({
+        id, ts: Date.now(), from, to, date1, date2,
+        note: String(body.note || ""), status: "pending"
+      });
+      pushLog(data, { date: date1, before: [from], after: [to], action: "swap-request", note: String(body.note || "") });
+    } else if (body.type === "swap-respond") {
+      const id = String(body.id || "");
+      const action = String(body.action || "");
+      const idx = data.pendingSwaps.findIndex((s) => s.id === id);
+      if (idx < 0) return json({ error: "调班请求不存在" }, 400);
+      const req = data.pendingSwaps[idx];
+      if (req.status !== "pending") return json({ error: "该请求已处理" }, 400);
+      if (action === "confirm") {
+        // 真正执行互调：date1 的 from 改 to；date2 的 to 改 from
+        const before1 = Array.isArray(data.overrides[req.date1]) ? data.overrides[req.date1].slice() : computeDefaultDuty(data, req.date1);
+        const before2 = Array.isArray(data.overrides[req.date2]) ? data.overrides[req.date2].slice() : computeDefaultDuty(data, req.date2);
+        const after1 = replaceName(before1, req.from, req.to);
+        const after2 = replaceName(before2, req.to, req.from);
+        data.overrides[req.date1] = after1;
+        data.overrides[req.date2] = after2;
+        req.status = "confirmed";
+        req.resolvedTs = Date.now();
+        pushLog(data, { date: req.date1, before: before1, after: after1, action: "swap-confirmed", note: req.note });
+        pushLog(data, { date: req.date2, before: before2, after: after2, action: "swap-confirmed", note: req.note });
+      } else if (action === "reject") {
+        req.status = "rejected";
+        req.resolvedTs = Date.now();
+        pushLog(data, { date: req.date1, before: [req.from], after: [req.from], action: "swap-rejected", note: req.note });
+      } else {
+        return json({ error: "action 必须是 confirm 或 reject" }, 400);
+      }
     } else if (body.type === "log-clear") {
       data.swapLog = [];
     } else if (body.type === "mode") {
@@ -72,6 +108,9 @@ export async function onRequestPost({ request, env }) {
     // 自动清理 7 天前的换班记录
     const cutoff = Date.now() - 7 * 86400000;
     data.swapLog = data.swapLog.filter((x) => (x.ts || 0) >= cutoff);
+    // 自动清理 14 天前的调班请求
+    const swapCutoff = Date.now() - 14 * 86400000;
+    data.pendingSwaps = data.pendingSwaps.filter((x) => (x.ts || 0) >= swapCutoff);
 
     await saveData(kv, data);
     return json({ ok: true });
@@ -90,8 +129,8 @@ function replaceName(arr, fromN, toN) {
   return out;
 }
 
+// computeDefaultDuty：不读 overrides / 不读 shifts，按 weekly 或 rotation 还原"原始"值日
 function computeDefaultDuty(data, dateStr) {
-  // 不读 overrides，按周排/轮排还原"原本应该是谁"
   if (data.mode === "rotation") {
     const r = data.rotation;
     if (!r || !r.startDate || !Array.isArray(r.order) || !r.order.length) return [];
@@ -138,6 +177,8 @@ const DEFAULTS = {
   mode: "weekly",
   rotation: { startDate: "", order: [] },
   swapLog: [],
+  shifts: [],
+  pendingSwaps: [],
   settings: {
     appToken: "",
     notify: "off",
@@ -163,6 +204,8 @@ async function loadData(kv) {
       order: (d.rotation && Array.isArray(d.rotation.order)) ? d.rotation.order.map(String) : []
     },
     swapLog: Array.isArray(d.swapLog) ? d.swapLog.filter((x) => x && typeof x === "object") : [],
+    shifts: Array.isArray(d.shifts) ? d.shifts.filter((x) => x && typeof x === "object") : [],
+    pendingSwaps: Array.isArray(d.pendingSwaps) ? d.pendingSwaps.filter((x) => x && typeof x === "object") : [],
     settings: { ...DEFAULTS.settings, ...(d.settings || {}) }
   };
 }

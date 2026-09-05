@@ -161,37 +161,37 @@
   <!-- 调班 -->
   <div class="page" id="page-adjust">
     <div class="sub-tabs">
-      <button class="sub-tab active" data-sub="single">某天换人</button>
-      <button class="sub-tab" data-sub="swap">两人互换</button>
+      <button class="sub-tab active" data-sub="shift">插入顺延</button>
+      <button class="sub-tab" data-sub="swap">调班请求</button>
       <button class="sub-tab" data-sub="log">调整记录</button>
     </div>
 
-    <div class="card sub-panel" id="sub-single">
-      <h3>某天换人</h3>
-      <p class="muted">直接指定某一天的值日生（可临时改人、加人、请假设为无人）。</p>
-      <div class="field"><label>选择日期</label><input type="date" id="ov-date"></div>
-      <div id="ov-current"></div>
-      <div class="field" style="margin-top:10px"><label>改为谁值日（可多选）</label><div id="ov-checks"><p class="empty">加载中...</p></div></div>
-      <div class="field"><label>备注（可选，会写入换班记录）</label><input type="text" id="ov-note" placeholder="如：李四替张三"></div>
-      <button class="btn" id="ov-save">保存调整</button>
-      <button class="btn gray" id="ov-clear">设为无人值日</button>
-      <button class="btn warn" id="ov-del">恢复默认排班</button>
+    <div class="card sub-panel" id="sub-shift">
+      <h3>插入顺延</h3>
+      <p class="muted">某人临时加入后，从他/她插入那天起，后续值日整体往后推一天，原顺序保留。</p>
+      <div class="field"><label>插入谁</label><select id="sh-name"><option value="">请选择</option></select></div>
+      <div class="field"><label>插入日期（从这天起值日）</label><input type="date" id="sh-from"></div>
+      <div class="field"><label>备注（可选）</label><input type="text" id="sh-note" placeholder="如：临时加入"></div>
+      <button class="btn" id="sh-go">插入并顺延</button>
+      <button class="btn gray" id="sh-clear" style="margin-top:10px">清空所有插入顺延</button>
+      <div id="shift-list" style="margin-top:14px"></div>
     </div>
 
     <div class="card sub-panel" id="sub-swap" style="display:none">
-      <h3>两人互换值日</h3>
-      <p class="muted">A 和 B 互相换班：A 原本值日的那天改由 B 值日，B 原本值日的那天改由 A 值日，其他人不受影响。</p>
-      <div class="field"><label>成员 A</label><select id="sw-a"><option value="">请选择</option></select></div>
-      <div class="field"><label>成员 B</label><select id="sw-b"><option value="">请选择</option></select></div>
+      <h3>调班请求（A 发起，B 确认）</h3>
+      <p class="muted">A 想跟 B 换班但 B 可能没空：发起后写入 B 的待确认列表，B 有空时再点确认才真正换。14 天未确认自动作废。</p>
+      <div class="field"><label>发起人 A</label><select id="sw-a"><option value="">请选择</option></select></div>
+      <div class="field"><label>被请求人 B</label><select id="sw-b"><option value="">请选择</option></select></div>
       <div class="field"><label>日期 1（A 原本值日）</label><input type="date" id="sw-d1"></div>
       <div class="field"><label>日期 2（B 原本值日）</label><input type="date" id="sw-d2"></div>
-      <div class="field"><label>备注（可选）</label><input type="text" id="sw-note" placeholder="如：互相替班"></div>
-      <button class="btn" id="sw-go">执行互调</button>
+      <div class="field"><label>备注（可选）</label><input type="text" id="sw-note" placeholder="如：想跟 B 换一天"></div>
+      <button class="btn" id="sw-go">发起请求</button>
+      <div id="pending-list" style="margin-top:14px"></div>
     </div>
 
     <div class="card sub-panel" id="sub-log" style="display:none">
       <h3>调整记录（最近 7 天）</h3>
-      <p class="muted">所有调整和互换操作都会记在这里，7 天后自动清理。</p>
+      <p class="muted">所有插入、顺延、调班请求、确认都会记在这里，7 天后自动清理。</p>
       <div id="swap-log"></div>
       <button class="btn gray" id="log-clear" style="margin-top:10px">清空记录</button>
     </div>
@@ -350,7 +350,48 @@
   // ---------- 数据 ----------
   function dutyFor(date, weekday) {
     if (!DATA) return [];
-    if (DATA.overrides[date] !== undefined) return DATA.overrides[date];
+    if (DATA.overrides && DATA.overrides[date] !== undefined) return DATA.overrides[date];
+
+    // 取所有 active 且 from <= date 的插入顺延，按 from 升序
+    var shifts = (Array.isArray(DATA.shifts) ? DATA.shifts : [])
+      .filter(function (s) { return s && s.active && s.from <= date; })
+      .sort(function (a, b) { return a.from < b.from ? -1 : (a.from > b.from ? 1 : 0); });
+
+    if (!shifts.length) return rawDutyFor(date, weekday);
+
+    var sp0 = shifts[0].from.split("-");
+    var startMs = Date.UTC(+sp0[0], +sp0[1] - 1, +sp0[2]);
+    var cp = date.split("-");
+    var curMs = Date.UTC(+cp[0], +cp[1] - 1, +cp[2]);
+    var totalDays = Math.floor((curMs - startMs) / 86400000);
+    if (totalDays < 0) return rawDutyFor(date, weekday);
+
+    var deferred = [];
+    var shiftIdx = 0;
+    for (var i = 0; i <= totalDays; i++) {
+      var ms = startMs + i * 86400000;
+      var d = new Date(ms);
+      var curDate = d.getUTCFullYear() + "-" + pad2(d.getUTCMonth() + 1) + "-" + pad2(d.getUTCDate());
+      var curWd = String(d.getUTCDay());
+      var raw = rawDutyFor(curDate, curWd);
+      if (raw && raw.length) deferred = deferred.concat(raw);
+
+      var todayShifts = [];
+      while (shiftIdx < shifts.length && shifts[shiftIdx].from === curDate) {
+        todayShifts.push(shifts[shiftIdx]);
+        shiftIdx++;
+      }
+      var actual;
+      if (todayShifts.length) {
+        actual = todayShifts.map(function (s) { return s.name; });
+      } else {
+        actual = deferred.length ? [deferred.shift()] : [];
+      }
+      if (i === totalDays) return actual;
+    }
+    return rawDutyFor(date, weekday);
+  }
+  function rawDutyFor(date, weekday) {
     if (DATA.mode === "rotation") return dutyForRotation(date);
     return DATA.weekly[weekday] || [];
   }
@@ -369,7 +410,6 @@
     api("/api/data").then(function (d) {
       DATA = d;
       renderAll();
-      renderOvCurrent();
     }).catch(function (e) {
       $("#today-detail").innerHTML = '<p class="empty">加载失败：' + esc(e.message) + '</p>';
     });
@@ -383,7 +423,7 @@
     renderWeek();
     renderMode();
     renderAdmin();
-    renderOvChecks();
+    renderAdjustInputs();
   }
 
   function renderHero() {
@@ -565,33 +605,85 @@
         p.style.display = (p.id === "sub-" + key) ? "" : "none";
       });
       if (key === "log") renderSwapLog();
+      if (key === "shift") renderShiftList();
+      if (key === "swap") renderPendingList();
     };
   });
 
-  function renderOvChecks() {
-    if (!DATA) return;
-    $("#ov-checks").innerHTML = memberChecks([]);
-    // 同时填充互调两下拉
+  function memberOptions(selected) {
     var opts = '<option value="">请选择</option>' +
-      DATA.members.map(function (m) { return '<option value="' + esc(m.name) + '">' + esc(m.name) + '</option>'; }).join("");
-    $("#sw-a").innerHTML = opts;
-    $("#sw-b").innerHTML = opts;
+      DATA.members.map(function (m) {
+        var sel = (selected === m.name) ? " selected" : "";
+        return '<option value="' + esc(m.name) + '"' + sel + '>' + esc(m.name) + '</option>';
+      }).join("");
+    return opts;
+  }
+
+  function renderAdjustInputs() {
+    if (!DATA) return;
+    $("#sh-name").innerHTML = memberOptions();
+    $("#sw-a").innerHTML = memberOptions();
+    $("#sw-b").innerHTML = memberOptions();
+    renderShiftList();
+    renderPendingList();
     renderSwapLog();
   }
 
-  function renderOvCurrent() {
-    var ds = $("#ov-date").value;
-    if (!ds || !DATA) return;
-    var d = new Date(ds.replace(/-/g, "/"));
-    var wd = String(d.getDay());
-    var names = dutyFor(ds, wd);
-    var isAdj = DATA.overrides[ds] !== undefined;
-    $("#ov-current").innerHTML = names.length
-      ? '<p>该日当前值日：<b>' + names.map(esc).join("、") + "</b>" + (isAdj ? '<span class="adj-mark">已调整</span>' : "") + "</p>"
-      : '<p class="empty">该日暂无人值日' + (isAdj ? "（已设为无人）" : "") + "</p>";
-    // 勾选框同步为当前值日人
-    $all("#ov-checks input").forEach(function (i) {
-      i.checked = names.indexOf(i.value) >= 0;
+  function renderShiftList() {
+    var box = $("#shift-list");
+    if (!box || !DATA) return;
+    var list = Array.isArray(DATA.shifts) ? DATA.shifts.slice().reverse() : [];
+    if (!list.length) { box.innerHTML = '<p class="empty">暂无插入顺延记录</p>'; return; }
+    box.innerHTML = list.map(function (s) {
+      var d = new Date(s.ts || Date.now());
+      var t = d.getFullYear() + "-" + pad2(d.getMonth() + 1) + "-" + pad2(d.getDate()) + " " + pad2(d.getHours()) + ":" + pad2(d.getMinutes());
+      var note = s.note ? '<div class="muted">备注：' + esc(s.note) + '</div>' : "";
+      return '<div class="log-row">' +
+        '<div class="log-head"><b>' + esc(s.from) + '</b> 起插入 <b>' + esc(s.name) + '</b> · <span class="muted">' + t + '</span></div>' +
+        '<button class="del" data-id="' + esc(s.id) + '">撤销</button>' +
+        note +
+        '</div>';
+    }).join("");
+    $all("#shift-list .del").forEach(function (b) {
+      b.onclick = function () {
+        var id = b.getAttribute("data-id");
+        withAdmin(function () {
+          return api("/api/schedule", { adminKey: adminKey, type: "shift-cancel", id: id })
+            .then(refreshAdjust).then(function () { toast("已撤销该插入顺延"); });
+        });
+      };
+    });
+  }
+
+  function renderPendingList() {
+    var box = $("#pending-list");
+    if (!box || !DATA) return;
+    var list = Array.isArray(DATA.pendingSwaps) ? DATA.pendingSwaps.slice().reverse() : [];
+    if (!list.length) { box.innerHTML = '<p class="empty">暂无调班请求</p>'; return; }
+    var STATUS_LABEL = { pending: "待确认", confirmed: "已确认", rejected: "已拒绝" };
+    box.innerHTML = list.map(function (p) {
+      var d = new Date(p.ts || Date.now());
+      var t = d.getFullYear() + "-" + pad2(d.getMonth() + 1) + "-" + pad2(d.getDate()) + " " + pad2(d.getHours()) + ":" + pad2(d.getMinutes());
+      var st = STATUS_LABEL[p.status] || p.status;
+      var note = p.note ? '<div class="muted">备注：' + esc(p.note) + '</div>' : "";
+      var actions = (p.status === "pending")
+        ? '<button class="btn" data-act="confirm" data-id="' + esc(p.id) + '">确认换班</button> <button class="btn warn" data-act="reject" data-id="' + esc(p.id) + '">拒绝</button>'
+        : "";
+      return '<div class="log-row">' +
+        '<div class="log-head"><b>' + esc(p.from) + '</b> 想和 <b>' + esc(p.to) + '</b> 换 · ' + esc(p.date1) + ' ↔ ' + esc(p.date2) + ' · ' + st + ' · <span class="muted">' + t + '</span></div>' +
+        note +
+        actions +
+        '</div>';
+    }).join("");
+    $all("#pending-list [data-act]").forEach(function (b) {
+      b.onclick = function () {
+        var id = b.getAttribute("data-id");
+        var act = b.getAttribute("data-act");
+        withAdmin(function () {
+          return api("/api/schedule", { adminKey: adminKey, type: "swap-respond", id: id, action: act })
+            .then(refreshAdjust).then(function () { toast("已" + (act === "confirm" ? "确认" : "拒绝") + "调班请求"); });
+        });
+      };
     });
   }
 
@@ -599,8 +691,12 @@
     var box = $("#swap-log");
     if (!box || !DATA) return;
     var log = Array.isArray(DATA.swapLog) ? DATA.swapLog.slice().reverse() : [];
-    if (!log.length) { box.innerHTML = '<p class="empty">还没有换班记录</p>'; return; }
-    var ACTION_LABEL = { override: "调整", del: "恢复", swap: "互调" };
+    if (!log.length) { box.innerHTML = '<p class="empty">还没有调整记录</p>'; return; }
+    var ACTION_LABEL = {
+      override: "调整", del: "恢复", swap: "互调",
+      "shift-insert": "插入顺延", "shift-cancel": "撤销顺延", "shift-clear": "清空顺延",
+      "swap-request": "发起请求", "swap-confirmed": "确认互调", "swap-rejected": "拒绝互调"
+    };
     box.innerHTML = log.map(function (x) {
       var d = new Date(x.ts || Date.now());
       var t = d.getFullYear() + "-" + pad2(d.getMonth() + 1) + "-" + pad2(d.getDate()) + " " + pad2(d.getHours()) + ":" + pad2(d.getMinutes());
@@ -618,38 +714,26 @@
 
   function pad2(n) { return String(n).padStart(2, "0"); }
 
-  $("#ov-date").onchange = renderOvCurrent;
+  function refreshAdjust() { return api("/api/data").then(function (d) { DATA = d; renderAll(); renderAdjustInputs(); }); }
 
-  function needDate() {
-    var ds = $("#ov-date").value;
-    if (!ds) { toast("请先选择日期"); return null; }
-    return ds;
-  }
-  function refreshAdjust() { return api("/api/data").then(function (d) { DATA = d; renderAll(); renderOvCurrent(); renderSwapLog(); }); }
-
-  $("#ov-save").onclick = function () {
-    var ds = needDate(); if (!ds) return;
+  // 插入顺延
+  $("#sh-go").onclick = function () {
+    var name = $("#sh-name").value, from = $("#sh-from").value;
+    if (!name) { toast("请选择要插入的人"); return; }
+    if (!from) { toast("请选择插入日期"); return; }
     withAdmin(function () {
-      return api("/api/schedule", { adminKey: adminKey, type: "override", date: ds, names: collectChecks("#ov-checks"), note: $("#ov-note").value.trim() })
-        .then(refreshAdjust).then(function () { $("#ov-note").value = ""; toast("已保存 " + ds + " 的调整"); });
+      return api("/api/schedule", { adminKey: adminKey, type: "shift-insert", from: from, name: name, note: $("#sh-note").value.trim() })
+        .then(refreshAdjust).then(function () { $("#sh-note").value = ""; toast(name + " 已插入，" + from + " 起整体顺延"); });
     });
   };
-  $("#ov-clear").onclick = function () {
-    var ds = needDate(); if (!ds) return;
+  $("#sh-clear").onclick = function () {
     withAdmin(function () {
-      return api("/api/schedule", { adminKey: adminKey, type: "override", date: ds, names: [], note: $("#ov-note").value.trim() })
-        .then(refreshAdjust).then(function () { toast(ds + " 已设为无人值日"); });
-    });
-  };
-  $("#ov-del").onclick = function () {
-    var ds = needDate(); if (!ds) return;
-    withAdmin(function () {
-      return api("/api/schedule", { adminKey: adminKey, type: "override-del", date: ds, note: $("#ov-note").value.trim() })
-        .then(refreshAdjust).then(function () { toast(ds + " 已恢复默认排班"); });
+      return api("/api/schedule", { adminKey: adminKey, type: "shift-clear" })
+        .then(refreshAdjust).then(function () { toast("已清空所有插入顺延"); });
     });
   };
 
-  // 两人互调
+  // 调班请求
   $("#sw-go").onclick = function () {
     var a = $("#sw-a").value, b = $("#sw-b").value;
     var d1 = $("#sw-d1").value, d2 = $("#sw-d2").value;
@@ -658,8 +742,8 @@
     if (!d1 || !d2) { toast("请选择两个日期"); return; }
     if (d1 === d2) { toast("两个日期不能相同"); return; }
     withAdmin(function () {
-      return api("/api/schedule", { adminKey: adminKey, type: "swap", a: a, b: b, date1: d1, date2: d2, note: $("#sw-note").value.trim() })
-        .then(refreshAdjust).then(function () { $("#sw-note").value = ""; toast(a + " ↔ " + b + " 互调已执行"); });
+      return api("/api/schedule", { adminKey: adminKey, type: "swap-request", from: a, to: b, date1: d1, date2: d2, note: $("#sw-note").value.trim() })
+        .then(refreshAdjust).then(function () { $("#sw-note").value = ""; toast("已发起调班请求，等 " + b + " 确认"); });
     });
   };
 
@@ -667,7 +751,7 @@
   $("#log-clear").onclick = function () {
     withAdmin(function () {
       return api("/api/schedule", { adminKey: adminKey, type: "log-clear" })
-        .then(refreshAdjust).then(function () { toast("换班记录已清空"); });
+        .then(refreshAdjust).then(function () { toast("调整记录已清空"); });
     });
   };
 
@@ -767,7 +851,6 @@
 
   // 初始化
   var d0 = new Date();
-  $("#ov-date").value = dateStr(d0);
   load();
 })();
 </script>
