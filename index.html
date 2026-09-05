@@ -645,7 +645,7 @@
     withAdmin(function () {
       return api("/api/remind", { adminKey: adminKey }).then(function (r) {
         if (r.pushed) toast("测试推送已发出，请查看微信");
-        else toast("未推送：" + (r.reason || JSON.stringify(r.wxpusher || "")));
+        else toast("未推送：" + (r.reason || "") + " " + JSON.stringify(r.wxpusher || ""));
         load();
       });
     });
