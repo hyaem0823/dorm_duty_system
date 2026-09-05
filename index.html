@@ -82,6 +82,12 @@
   .guide b { color: #2c3550; }
   .adj-mark { font-size: 11px; color: #c47b12; background: #fff4e5; border-radius: 6px; padding: 1px 6px; margin-left: 4px; }
   .status-line { font-size: 13px; color: #8a93a8; margin-top: 6px; word-break: break-all; }
+  .sub-tabs { display: flex; gap: 8px; margin-bottom: 12px; }
+  .sub-tab {
+    flex: 1; padding: 10px 12px; border-radius: 10px; border: 1px solid #e1e5ee;
+    background: #fff; color: #5b657d; font-size: 14px; cursor: pointer; transition: all .15s;
+  }
+  .sub-tab.active { background: #4a7dff; color: #fff; border-color: #4a7dff; }
   .log-row { padding: 8px 0; border-top: 1px solid #eef0f4; font-size: 13px; }
   .log-row:first-child { border-top: 0; }
   .log-head { margin-bottom: 3px; }
@@ -154,7 +160,13 @@
 
   <!-- 调班 -->
   <div class="page" id="page-adjust">
-    <div class="card">
+    <div class="sub-tabs">
+      <button class="sub-tab active" data-sub="single">单日调整</button>
+      <button class="sub-tab" data-sub="swap">两人互调</button>
+      <button class="sub-tab" data-sub="log">换班记录</button>
+    </div>
+
+    <div class="card sub-panel" id="sub-single">
       <h3>某天临时调整 / 换班 / 请假</h3>
       <div class="field"><label>选择日期</label><input type="date" id="ov-date"></div>
       <div id="ov-current"></div>
@@ -165,7 +177,7 @@
       <button class="btn warn" id="ov-del">恢复默认排班</button>
     </div>
 
-    <div class="card">
+    <div class="card sub-panel" id="sub-swap" style="display:none">
       <h3>两人互调（A 和 B 互换值日）</h3>
       <p class="muted">把 A 在 date1 的值日与 B 在 date2 的值日对调，其他成员不受影响。</p>
       <div class="field"><label>成员 A</label><select id="sw-a"><option value="">请选择</option></select></div>
@@ -176,7 +188,7 @@
       <button class="btn" id="sw-go">执行互调</button>
     </div>
 
-    <div class="card">
+    <div class="card sub-panel" id="sub-log" style="display:none">
       <h3>换班记录（最近 7 天）</h3>
       <div id="swap-log"></div>
       <button class="btn gray" id="log-clear" style="margin-top:10px">清空记录</button>
@@ -542,6 +554,18 @@
   };
 
   // ---------- 调班 ----------
+  $all(".sub-tab").forEach(function (btn) {
+    btn.onclick = function () {
+      $all(".sub-tab").forEach(function (b) { b.classList.remove("active"); });
+      btn.classList.add("active");
+      var key = btn.getAttribute("data-sub");
+      $all("#page-adjust .sub-panel").forEach(function (p) {
+        p.style.display = (p.id === "sub-" + key) ? "" : "none";
+      });
+      if (key === "log") renderSwapLog();
+    };
+  });
+
   function renderOvChecks() {
     if (!DATA) return;
     $("#ov-checks").innerHTML = memberChecks([]);
