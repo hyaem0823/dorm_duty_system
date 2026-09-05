@@ -1,9 +1,5 @@
 {
-  "schedules": [
-    {
-      "name": "duty-remind",
-      "cron": "*/5 * * * *",
-      "path": "/cron/remind"
-    }
+  "rewrites": [
+    { "source": "/", "destination": "/index.html" }
   ]
 }
